@@ -1,133 +1,273 @@
+// Implementação da Fase 2: labirinto diferente da Fase 1, com armadilhas ativas.
 #include "Fase2.h"
-#include <vector>
-#include <utility>
-#include <iostream>
+#include <GL/glew.h>
+#include <GL/freeglut.h>
 #include <cstdlib>
 #include <ctime>
-
-// Forward declarations of globals and functions defined in Jogo.cpp
-#include "Jogador.h"
+#include <cmath>
+#include <algorithm>
 #include "Pathfinding.h"
-#include <iostream>
 
-// The main game defines these; use local constants here to match the game config
-constexpr int LOCAL_LARGURA = 15;
-constexpr int LOCAL_ALTURA = 10;
-constexpr float LOCAL_TAMANHO_CELULA = 48.0f;
-extern char mapaLabirinto[/*ALTURA*/10][/*LARGURA+1*/16];
-extern std::vector<std::pair<float,float>> rastroVerde;
-extern std::vector<std::pair<int,int>> pathCells;
-extern std::vector<std::pair<float,float>> hintRastroVerde;
-extern std::vector<std::pair<int,int>> hintPathCells;
-extern Jogador jogador;
-extern int inicioCol, inicioRow, fimCol, fimRow;
-extern float inicioLabX, inicioLabY, fimLabX, fimLabY;
-extern int botaoCol, botaoRow;
-extern bool botaoAtivado;
-extern std::vector<std::pair<int,int>> portasParaAbrir;
+Fase2::Fase2() {
+    larguraLabirinto = 15;
+    alturaLabirinto = 10;
+    tamanhoCelula = 48.0f;
 
-// Functions defined in Jogo.cpp that we call
-extern void gerarRastroVerde(bool fromCurrentPosition = false);
-extern void inicializarFaseEspinhos(const std::vector<std::pair<int,int>>& forbidden = {});
-extern std::pair<float,float> getPosicaoCentro(int col, int row);
-
-void Fase2::carregar() {
-    // Define mapa da fase 2 (mais difícil)
-    const char* mapa2[LOCAL_ALTURA] = {
+    mapaLabirinto.assign(alturaLabirinto, std::vector<char>(larguraLabirinto));
+    const char* mapa[] = {
         "XXXXXXXXXXXXXXX",
-        "X S X X   X   X",
-        "X X X X X XXX X",
-        "X X   X   X X X",
-        "X XXX XXXXX X X",
-        "X   X     X   X",
-        "X X XXX X X X X",
-        "X X X   X X X X",
-        "X   X XXX   X F",
-        "XXXXXXXXXXXXXXX",
+        "X S     X   X X",
+        "X XXX X X X X X",
+        "X   X X   X   X",
+        "XXX X XXX XXX X",
+        "X   X   X     X",
+        "X XXX X XXXXX X",
+        "X     X     X X",
+        "X XXX XXXXX X F",
+        "XXXXXXXXXXXXXXX"
     };
 
-    for (int r = 0; r < LOCAL_ALTURA; ++r) {
-        for (int c = 0; c < LOCAL_LARGURA; ++c) {
-            mapaLabirinto[r][c] = mapa2[r][c];
+    for (int r = 0; r < alturaLabirinto; ++r) {
+        for (int c = 0; c < larguraLabirinto; ++c) {
+            mapaLabirinto[r][c] = mapa[r][c];
+            if (mapa[r][c] == 'S') { inicioCol = c; inicioRow = r; }
+            else if (mapa[r][c] == 'F') { fimCol = c; fimRow = r; }
         }
     }
+}
 
-    // Atualiza inicio/fim e jogador (similar ao que main_proxy fazia)
-    inicioCol = inicioRow = fimCol = fimRow = -1;
-    for (int y = 0; y < LOCAL_ALTURA; ++y) {
-        for (int x = 0; x < LOCAL_LARGURA; ++x) {
-            if (mapaLabirinto[y][x] == 'S') {
-                float startX = x * LOCAL_TAMANHO_CELULA + (LOCAL_TAMANHO_CELULA - jogador.getCaixaColisao().largura) / 2;
-                float startY = (LOCAL_ALTURA - 1 - y) * LOCAL_TAMANHO_CELULA + (LOCAL_TAMANHO_CELULA - jogador.getCaixaColisao().altura) / 2;
-                jogador = Jogador(startX, startY, jogador.getCaixaColisao().largura, jogador.getCaixaColisao().altura);
-                inicioCol = x; inicioRow = y;
-                inicioLabX = startX; inicioLabY = startY;
-            } else if (mapaLabirinto[y][x] == 'F') {
-                std::pair<float, float> posFim = getPosicaoCentro(x, y);
-                fimLabX = posFim.first;
-                fimLabY = posFim.second;
-                fimCol = x; fimRow = y;
+void Fase2::inicializar() {
+    // Espinhos
+    espinhos.clear();
+    std::srand((unsigned)std::time(nullptr));
+    auto adicionaEspinho = [&](int c, int r) {
+        if (r < 0 || r >= alturaLabirinto || c < 0 || c >= larguraLabirinto) return;
+        if (mapaLabirinto[r][c] == 'X' || mapaLabirinto[r][c] == 'S' || mapaLabirinto[r][c] == 'F') return;
+        float espW = tamanhoCelula * 0.6f;
+        float espH = espW;
+        float x = c * tamanhoCelula + (tamanhoCelula - espW) / 2.0f;
+        float y = (alturaLabirinto - 1 - r) * tamanhoCelula + (tamanhoCelula - espH) / 2.0f;
+        espinhos.emplace_back(x, y, espW, espH);
+        // Alternância garantida
+        float periodo = 1.0f + (std::rand() % 180) / 100.0f; // 1.0 a 2.8s
+        espinhos.back().setPeriodo(periodo);
+        float offset = (std::rand() % 100) / 100.0f * periodo;
+        espinhos.back().setTimer(offset);
+        espinhos.back().setAtivo((std::rand() % 2) == 1);
+    };
+
+    // Alguns fixos e alguns aleatórios
+    const std::pair<int,int> fixos[] = { {2,3}, {5,1}, {9,4}, {12,6}, {7,7}, {3,5}, {10,2} };
+    for (auto &p : fixos) adicionaEspinho(p.first, p.second);
+    int adicionados = 0, tentativas = 0;
+    while (adicionados < 7 && tentativas < 300) {
+        ++tentativas;
+        int c = std::rand() % larguraLabirinto;
+        int r = std::rand() % alturaLabirinto;
+        if (mapaLabirinto[r][c] == ' ') {
+            adicionaEspinho(c, r);
+            ++adicionados;
+        }
+    }
+}
+
+void Fase2::atualizar(float dt) {
+    for (auto &e : espinhos) e.atualizar(dt);
+
+    // Atualiza caminho (bússola) quando o jogador entra em uma nova célula
+    if (jogadorRef) {
+        CaixaColisao cj = jogadorRef->getCaixaColisao();
+        int col = static_cast<int>((cj.x + cj.largura/2) / tamanhoCelula);
+        int row = (alturaLabirinto - 1) - static_cast<int>((cj.y + cj.altura/2) / tamanhoCelula);
+        auto inBounds = [&](int c,int r){ return r>=0 && r<alturaLabirinto && c>=0 && c<larguraLabirinto; };
+        static int lastCol = -9999, lastRow = -9999;
+        if ((col != lastCol || row != lastRow) && inBounds(col,row) && mapaLabirinto[row][col] != 'X') {
+            lastCol = col; lastRow = row;
+            // Monta grid para A*
+            std::vector<std::string> grid(alturaLabirinto);
+            for (int r = 0; r < alturaLabirinto; ++r) {
+                grid[r].resize(larguraLabirinto);
+                for (int c = 0; c < larguraLabirinto; ++c) grid[r][c] = mapaLabirinto[r][c];
             }
+            pathCells = findPathAStar(grid, col, row, fimCol, fimRow);
+        }
+    }
+}
+
+void Fase2::desenhar() {
+    // Desenha labirinto com grade (quadriculado)
+    // Calcula a célula do jogador para limitar campo de visão (raio 3 células)
+    int pcol = -100, prow = -100;
+    if (jogadorRef) {
+        CaixaColisao cj = jogadorRef->getCaixaColisao();
+        pcol = static_cast<int>((cj.x + cj.largura/2) / tamanhoCelula);
+        prow = (alturaLabirinto - 1) - static_cast<int>((cj.y + cj.altura/2) / tamanhoCelula);
+    }
+
+    for (int i = 0; i < alturaLabirinto; ++i) {
+        for (int j = 0; j < larguraLabirinto; ++j) {
+            float x = j * tamanhoCelula;
+            float y = (alturaLabirinto - 1 - i) * tamanhoCelula;
+            if (mapaLabirinto[i][j] == 'X') glColor3f(0.45f, 0.45f, 0.45f);
+            else glColor3f(0.20f, 0.20f, 0.20f);
+            glBegin(GL_QUADS);
+                glVertex2f(x, y);
+                glVertex2f(x + tamanhoCelula, y);
+                glVertex2f(x + tamanhoCelula, y + tamanhoCelula);
+                glVertex2f(x, y + tamanhoCelula);
+            glEnd();
+            glColor3f(0.06f, 0.06f, 0.08f);
+            glBegin(GL_LINE_LOOP);
+                glVertex2f(x, y);
+                glVertex2f(x + tamanhoCelula, y);
+                glVertex2f(x + tamanhoCelula, y + tamanhoCelula);
+                glVertex2f(x, y + tamanhoCelula);
+            glEnd();
         }
     }
 
-    // Gera initial rastro
-    gerarRastroVerde();
+    // Desenha espinhos
+    for (const auto &e : espinhos) e.desenhar();
 
-    // Try to set button on the path (preferably 1/3 along the path)
-    botaoAtivado = false;
-    portasParaAbrir.clear();
-    if (!pathCells.empty()) {
-        int idx = std::min((int)pathCells.size() - 1, (int) (pathCells.size() / 3));
-        botaoCol = pathCells[idx].first;
-        botaoRow = pathCells[idx].second;
-    } else {
-        // fallback: find any walkable cell
-        botaoCol = botaoRow = -1;
-        for (int r = 0; r < LOCAL_ALTURA; ++r) {
-                for (int c = 0; c < LOCAL_LARGURA; ++c) {
-                    if (mapaLabirinto[r][c] != 'X' && mapaLabirinto[r][c] != 'S' && mapaLabirinto[r][c] != 'F') {
-                    botaoCol = c; botaoRow = r; break;
+    // Blackout fora do raio de visão (3 células ao redor do jogador)
+    if (pcol > -50 && prow > -50) {
+        const float raio = 3.0f;
+        glColor3f(0.0f, 0.0f, 0.0f);
+        for (int i = 0; i < alturaLabirinto; ++i) {
+            for (int j = 0; j < larguraLabirinto; ++j) {
+                float dx = static_cast<float>(j - pcol);
+                float dy = static_cast<float>(i - prow);
+                float dist = std::sqrt(dx*dx + dy*dy);
+                if (dist > raio) {
+                    float x = j * tamanhoCelula;
+                    float y = (alturaLabirinto - 1 - i) * tamanhoCelula;
+                    glBegin(GL_QUADS);
+                        glVertex2f(x, y);
+                        glVertex2f(x + tamanhoCelula, y);
+                        glVertex2f(x + tamanhoCelula, y + tamanhoCelula);
+                        glVertex2f(x, y + tamanhoCelula);
+                    glEnd();
                 }
             }
-            if (botaoCol != -1) break;
         }
     }
 
-    // Define example doors relative to map; ensure they are inside bounds and are walls
-    std::vector<std::pair<int,int>> candidateDoors = {{4,2},{5,2},{6,2},{6,3}};
-    for (auto &p : candidateDoors) {
-        if (p.second >= 0 && p.second < LOCAL_ALTURA && p.first >= 0 && p.first < LOCAL_LARGURA) {
-            if (mapaLabirinto[p.second][p.first] == 'X') portasParaAbrir.push_back(p);
-        }
-    }
+    // Desenha bússola no canto inferior esquerdo (fora do labirinto)
+    // Posição fixa na margem: usa a margem de ~50px do ortho (ver Jogo::redimensionarJanela)
+    const float hudX = -40.0f;
+    const float hudY = -40.0f;
+    const float arrowLen = 28.0f;
+    const float arrowWidth = 10.0f;
+    // Caixa de fundo da bússola
+    glColor3f(0.08f, 0.08f, 0.10f);
+    glBegin(GL_QUADS);
+        glVertex2f(hudX - 24, hudY - 24);
+        glVertex2f(hudX + 24, hudY - 24);
+        glVertex2f(hudX + 24, hudY + 24);
+        glVertex2f(hudX - 24, hudY + 24);
+    glEnd();
+    glColor3f(0.18f, 0.18f, 0.22f);
+    glBegin(GL_LINE_LOOP);
+        glVertex2f(hudX - 24, hudY - 24);
+        glVertex2f(hudX + 24, hudY - 24);
+        glVertex2f(hudX + 24, hudY + 24);
+        glVertex2f(hudX - 24, hudY + 24);
+    glEnd();
 
-    // Compute hint path: simulate opening doors on a copy of the map and run A*
-    hintRastroVerde.clear();
-    hintPathCells.clear();
-    {
-        // make grid string copy and open doors
-        std::vector<std::string> gridOpen(LOCAL_ALTURA);
-        for (int r = 0; r < LOCAL_ALTURA; ++r) {
-            gridOpen[r].resize(LOCAL_LARGURA);
-            for (int c = 0; c < LOCAL_LARGURA; ++c) gridOpen[r][c] = mapaLabirinto[r][c];
-        }
-        for (auto &pr : portasParaAbrir) {
-            gridOpen[pr.second][pr.first] = ' ';
-        }
-        if (inicioCol >= 0 && fimCol >= 0) {
-            auto hintPath = findPathAStar(gridOpen, inicioCol, inicioRow, fimCol, fimRow);
-            for (const auto &cell : hintPath) {
-                hintPathCells.push_back(cell);
-                hintRastroVerde.push_back(getPosicaoCentro(cell.first, cell.second));
+    // Calcula direção da seta
+    float ang = 0.0f; bool temDirecao = false;
+    if (pcol > -50 && prow > -50) {
+        // Se temos pathCells, usa próximo passo; senão, aponta para o objetivo
+        if (!pathCells.empty()) {
+            // encontra índice do jogador no caminho
+            int idx = -1;
+            for (int i = 0; i < (int)pathCells.size(); ++i) {
+                if (pathCells[i].first == pcol && pathCells[i].second == prow) { idx = i; break; }
             }
+            int nx = fimCol, ny = fimRow;
+            if (idx >= 0 && idx + 1 < (int)pathCells.size()) {
+                nx = pathCells[idx+1].first; ny = pathCells[idx+1].second;
+            } else if (idx == -1 && pathCells.size() >= 2) {
+                // se o primeiro nó já é o próximo
+                nx = pathCells[1].first; ny = pathCells[1].second;
+            }
+            float dx = static_cast<float>(nx - pcol);
+            float dy = static_cast<float>(-(ny - prow)); // invertido para coordenadas de mundo (y pra cima)
+            if (dx != 0.0f || dy != 0.0f) { ang = std::atan2(dy, dx); temDirecao = true; }
+        } else {
+            float dx = static_cast<float>(fimCol - pcol);
+            float dy = static_cast<float>(-(fimRow - prow));
+            if (dx != 0.0f || dy != 0.0f) { ang = std::atan2(dy, dx); temDirecao = true; }
         }
     }
 
-    // Reinit spikes based on rastro but avoid placing spikes on the button
-    std::vector<std::pair<int,int>> forbidden;
-    if (botaoCol >= 0 && botaoRow >= 0) forbidden.emplace_back(botaoCol, botaoRow);
-    inicializarFaseEspinhos(forbidden);
+    if (temDirecao) {
+        // Desenha seta
+        float cx = hudX, cy = hudY;
+        float tipX = cx + std::cos(ang) * arrowLen;
+        float tipY = cy + std::sin(ang) * arrowLen;
+        float leftAng = ang + 2.6f;  // ~149° para abas da ponta
+        float rightAng = ang - 2.6f;
+        float leftX = tipX + std::cos(leftAng) * arrowWidth;
+        float leftY = tipY + std::sin(leftAng) * arrowWidth;
+        float rightX = tipX + std::cos(rightAng) * arrowWidth;
+        float rightY = tipY + std::sin(rightAng) * arrowWidth;
 
-    std::cout << "Fase2 carregada. Botao em (" << botaoCol << "," << botaoRow << ")" << std::endl;
+        // haste
+        glColor3f(0.0f, 0.0f, 0.0f);
+        glLineWidth(4.0f);
+        glBegin(GL_LINES);
+            glVertex2f(cx, cy);
+            glVertex2f(tipX, tipY);
+        glEnd();
+        glLineWidth(1.0f);
+        glColor3f(0.9f, 0.2f, 0.2f);
+        glLineWidth(2.0f);
+        glBegin(GL_LINES);
+            glVertex2f(cx, cy);
+            glVertex2f(tipX, tipY);
+        glEnd();
+        glLineWidth(1.0f);
+
+        // ponta
+        glColor3f(0.9f, 0.2f, 0.2f);
+        glBegin(GL_TRIANGLES);
+            glVertex2f(tipX, tipY);
+            glVertex2f(leftX, leftY);
+            glVertex2f(rightX, rightY);
+        glEnd();
+    }
+}
+
+bool Fase2::verificarVitoria(const Jogador& jogador) {
+    float centroX = fimCol * tamanhoCelula + tamanhoCelula/2;
+    float centroY = (alturaLabirinto - 1 - fimRow) * tamanhoCelula + tamanhoCelula/2;
+    CaixaColisao cj = jogador.getCaixaColisao();
+    float dx = (cj.x + cj.largura/2) - centroX;
+    float dy = (cj.y + cj.altura/2) - centroY;
+    return (dx*dx + dy*dy) < (tamanhoCelula * tamanhoCelula / 4);
+}
+
+bool Fase2::verificarColisao(float x, float y) {
+    float larguraJog = tamanhoCelula * 0.66f;
+    float alturaJog = tamanhoCelula * 0.66f;
+    if (jogadorRef) {
+        CaixaColisao cj = jogadorRef->getCaixaColisao();
+        larguraJog = cj.largura; alturaJog = cj.altura;
+    }
+    float offsetsX[] = {0.0f, larguraJog};
+    float offsetsY[] = {0.0f, alturaJog};
+    for (float ox : offsetsX) {
+        for (float oy : offsetsY) {
+            int col = static_cast<int>((x + ox) / tamanhoCelula);
+            int row = (alturaLabirinto - 1) - static_cast<int>((y + oy) / tamanhoCelula);
+            if (row < 0 || row >= alturaLabirinto || col < 0 || col >= larguraLabirinto) return true;
+            if (mapaLabirinto[row][col] == 'X') return true;
+        }
+    }
+    return false;
+}
+
+void Fase2::carregar() {
+    // Compatibilidade antiga: sem efeito
 }

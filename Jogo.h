@@ -31,6 +31,8 @@ public:
     void redimensionarJanela(int w, int h);
     void teclaPressionada(unsigned char key, int x, int y);
     void teclaSolta(unsigned char key, int x, int y);
+    void teclaEspecialPressionada(int key, int x, int y);
+    void teclaEspecialSolta(int key, int x, int y);
     
     
     bool getJogoVencido() const { return jogoVencido; }

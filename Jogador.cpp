@@ -27,14 +27,17 @@ void Jogador::atualizar(float deltaTime) {
     float velX = 0.0f;
     float velY = 0.0f;
 
-    if (m_movendoCima) {
-        velY = m_velocidadeBase;
-    } else if (m_movendoBaixo) {
-        velY = -m_velocidadeBase;
-    } else if (m_movendoEsquerda) {
-        velX = -m_velocidadeBase;
-    } else if (m_movendoDireita) {
-        velX = m_velocidadeBase;
+    // Permite combinações (ex.: diagonais). Mantém velocidade base.
+    if (m_movendoCima) velY += m_velocidadeBase;
+    if (m_movendoBaixo) velY -= m_velocidadeBase;
+    if (m_movendoEsquerda) velX -= m_velocidadeBase;
+    if (m_movendoDireita) velX += m_velocidadeBase;
+
+    // Normaliza velocidade diagonal para não ficar mais rápida
+    if (velX != 0.0f && velY != 0.0f) {
+        const float invSqrt2 = 0.70710678f; // 1/sqrt(2)
+        velX *= invSqrt2;
+        velY *= invSqrt2;
     }
 
     // 2. Aplicar o movimento

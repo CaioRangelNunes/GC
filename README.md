@@ -1,2 +1,0 @@
-# GC
-TP-GRUPO-CG
