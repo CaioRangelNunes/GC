@@ -29,7 +29,7 @@ int fimCol = -1, fimRow = -1;
 // Fase atual (1 = fase1, 2 = fase2)
 int faseAtual = 1;
 
-// ---------------- SISTEMA DE ESTADOS DE JOGO (MENU) -----------------
+// Estados principais: menu inicial, instruções e jogo ativo
 enum class GameState
 {
     MENU_PRINCIPAL,
@@ -41,23 +41,22 @@ static GameState gameState = GameState::MENU_PRINCIPAL;
 #include "Menu.h"
 static MenuPrincipal g_menuPrincipal;
 static TelaInstrucoes g_telaInstrucoes;
-// Dimensões base para UI (usadas para converter coordenadas do mouse)
-static int gWindowWidth = 1024;
-static int gWindowHeight = 768;
+// Dimensões atuais da janela (atualizadas em callbackReshape)
+int gWindowWidth = 1024; // tornado global para uso no Menu
+int gWindowHeight = 768; // tornado global para uso no Menu
 
-// Variedade de personagens (apenas variação de cores no desenho)
+// Seleção global de variante de personagem (afetando desenho do jogador e miniaturas)
 #include "PlayerVariant.h"
 PlayerVariant g_selectedVariant = PlayerVariant::PADRAO; // definição global
 
-// Botão e portas da fase 2
+// Controle de botão e portas da segunda fase (libera caminho alternativo)
 int botaoCol = -1, botaoRow = -1;
 bool botaoAtivado = false;
 std::vector<std::pair<int, int>> portasParaAbrir; // células que serão convertidas de 'X' -> ' '
 
 // --- VARIÁVEIS GLOBAIS DO JOGO ---
 std::vector<ArmadilhaEspinho> meusEspinhos;
-// Inicializa o jogador em (0,0) temporariamente, será movido no 'main_proxy'
-// Aumentei o jogador para ficar proporcional ao novo TAMANHO_CELULA
+// Instância do jogador; posição correta definida após localizar célula 'S'
 Jogador jogador(0.0f, 0.0f, 32.0f, 32.0f); // Tamanho 32x32
 
 // --- VARIÁVEIS DO LABIRINTO ---
@@ -65,7 +64,7 @@ const int LARGURA_LABIRINTO = 15;
 const int ALTURA_LABIRINTO = 10;
 const float TAMANHO_CELULA = 48.0f; // Cada parede/caminho terá 48x48 (melhor visual)
 
-// 'X' = Parede, ' ' = Chão, 'S' = Início, 'F' = Fim
+// Mapa ASCII: 'X'=parede, ' '=chão, 'S'=spawn, 'F'=objetivo
 char mapaLabirinto[ALTURA_LABIRINTO][LARGURA_LABIRINTO + 1] = {
     "XXXXXXXXXXXXXXX",
     "X S X   X     X",
@@ -88,26 +87,26 @@ int pathProgressIndex = 0; // índice do caminho já percorrido
 float inicioLabX, inicioLabY;
 float fimLabX, fimLabY;
 
-// Forward declarations
+// Declarações antecipadas para funções dependentes entre si
 void inicializarFaseEspinhos(const std::vector<std::pair<int, int>> &forbidden);
 void gerarRastroVerde(bool fromCurrentPosition);
 std::pair<float, float> getPosicaoCentro(int col, int row);
 void desenharJogo();
 void atualizarJogo(float deltaTime);
-// Helper to load phase 2 cleanly (used on finishing phase1 and for debug key)
+// Carrega a fase 2: ajusta mapa, reposiciona jogador, recalcula caminhos e espinhos
 void carregarFase2()
 {
-    // Reset state before loading phase 2
+    // Reseta estruturas para evitar resíduos da fase anterior
     botaoAtivado = false;
     portasParaAbrir.clear();
     rastroVerde.clear();
     pathCells.clear();
     meusEspinhos.clear();
 
-    // Load phase 2 and initialize player position
+    // Substitui mapa (Fase2::carregar) e busca posições de 'S' e 'F'
     Fase2::carregar();
 
-    // Make sure player is in starting position
+    // Localiza spawn e recria jogador mantendo largura/altura
     for (int y = 0; y < ALTURA_LABIRINTO; ++y)
     {
         for (int x = 0; x < LARGURA_LABIRINTO; ++x)
@@ -126,7 +125,7 @@ void carregarFase2()
         }
     }
 
-    // Find finish position
+    // Encontra alvo final
     for (int y = 0; y < ALTURA_LABIRINTO; ++y)
     {
         for (int x = 0; x < LARGURA_LABIRINTO; ++x)
@@ -143,12 +142,12 @@ void carregarFase2()
         }
     }
 
-    // Update phase and regenerate path
+    // Atualiza indicador de fase e gera novo rastro A*
     faseAtual = 2;
     pathProgressIndex = 0;
     gerarRastroVerde(false);
 
-    // Initialize spikes avoiding the button position
+    // Inicializa espinhos omitindo célula do botão
     std::vector<std::pair<int, int>> forbidden;
     if (botaoCol >= 0 && botaoRow >= 0)
     {
@@ -156,13 +155,13 @@ void carregarFase2()
     }
     inicializarFaseEspinhos(forbidden);
 
-    // Debug log
+    // Saída de depuração sobre estado carregado
     std::cout << "[DEBUG] carregarFase2: player at (" << jogador.getCaixaColisao().x << "," << jogador.getCaixaColisao().y << ")" << std::endl;
     std::cout << "[DEBUG] carregarFase2: meusEspinhos.size=" << meusEspinhos.size() << " pathCells.size=" << pathCells.size() << std::endl;
 }
-// --- FUNÇÕES DE LÓGICA DO JOGO ---
+// Funções principais de lógica e atualização
 
-// Retorna a célula (col,row) onde o jogador está atualmente
+// Converte posição do jogador para índices de célula (col,row)
 std::pair<int, int> getJogadorCell()
 {
     CaixaColisao caixa = jogador.getCaixaColisao();
@@ -173,7 +172,7 @@ std::pair<int, int> getJogadorCell()
     return {col, row};
 }
 
-// Função auxiliar para converter (coluna, linha) da matriz para (x, y) do jogo
+// Transforma coordenadas de grade para posição central em pixels
 std::pair<float, float> getPosicaoCentro(int col, int row)
 {
     float x = col * TAMANHO_CELULA + TAMANHO_CELULA / 2;
@@ -184,11 +183,11 @@ std::pair<float, float> getPosicaoCentro(int col, int row)
 void inicializarFaseEspinhos(const std::vector<std::pair<int, int>> &forbidden = {})
 {
     meusEspinhos.clear();
-    // Adiciona espinhos apenas em células caminháveis (não 'X').
+    // Distribui espinhos apenas em células caminháveis
     float espW = TAMANHO_CELULA * 0.6f;
     float espH = espW;
 
-    // Recolhe células caminháveis (exclui S e F)
+    // Coleta células livres excluindo origem e destino
     std::vector<std::pair<int, int>> walkables;
     for (int r = 0; r < ALTURA_LABIRINTO; ++r)
     {
@@ -202,14 +201,14 @@ void inicializarFaseEspinhos(const std::vector<std::pair<int, int>> &forbidden =
         }
     }
 
-    // Queremos um número maior de espinhos para dinamizar a fase
+    // Define número máximo de espinhos para dinamismo
     int maxSpikes = std::min(14, (int)walkables.size());
 
-    // Se houver um rastro gerado (A*), prefira posicionar vários espinhos ao longo do rastro
+    // Se existir rastro, prioriza posicionar parte dos espinhos ao longo dele
     std::vector<std::pair<int, int>> placedCells;
     if (rastroVerde.size() >= 3)
     {
-        // converte rastroVerde em células únicas
+    // Remove duplicadas do rastro convertendo para lista de células
         std::vector<std::pair<int, int>> pathCellsLocal;
         for (const auto &p : rastroVerde)
         {
@@ -219,7 +218,7 @@ void inicializarFaseEspinhos(const std::vector<std::pair<int, int>> &forbidden =
                 pathCellsLocal.emplace_back(col, row);
         }
 
-        // Escolhe alguns pontos ao longo do caminho (cada Nth) para colocar espinhos
+    // Escolhe cada n-ésima célula para posicionar espinho
         int n = std::max(1, (int)pathCellsLocal.size() / 6);
         int placed = 0;
         for (size_t i = n; i < pathCellsLocal.size() && placed < maxSpikes / 2; i += n)
@@ -240,9 +239,9 @@ void inicializarFaseEspinhos(const std::vector<std::pair<int, int>> &forbidden =
         }
     }
 
-    // Preenche o restante com células aleatórias caminháveis
+    // Preenche slots restantes de espinhos aleatoriamente
     std::srand((unsigned)std::time(nullptr));
-    // Preenche o restante com células aleatórias caminháveis, evitando forbiddens
+    // Evita botão ou outras células marcadas como proibidas
     while ((int)placedCells.size() < maxSpikes && !walkables.empty())
     {
         int idx = std::rand() % (int)walkables.size();
@@ -254,7 +253,7 @@ void inicializarFaseEspinhos(const std::vector<std::pair<int, int>> &forbidden =
         walkables.erase(walkables.begin() + idx);
     }
 
-    // Cria os espinhos nas células escolhidas com períodos aleatórios e offsets
+    // Cria espinhos com período variável para alternância assíncrona
     for (size_t i = 0; i < placedCells.size(); ++i)
     {
         int col = placedCells[i].first;
@@ -276,19 +275,19 @@ void gerarRastroVerde(bool fromCurrentPosition = false)
     rastroVerde.clear();
     pathCells.clear();
 
-    // Gera o rastro automaticamente com A* usando o mapa
+    // Executa A* para gerar caminho verde; opção de usar posicionamento atual como início
     if (fimCol >= 0)
     { // Só precisamos ter um fim válido
         int startCol, startRow;
         if (fromCurrentPosition)
         {
             auto [col, row] = getJogadorCell();
-            // Verifica se a posição atual é válida
+            // Garante ponto inicial válido (não parede, dentro dos limites)
             if (col < 0 || col >= LARGURA_LABIRINTO ||
                 row < 0 || row >= ALTURA_LABIRINTO ||
                 mapaLabirinto[row][col] == 'X')
             {
-                return; // Não gera caminho se estiver em posição inválida
+                return; // posição inválida: aborta geração
             }
             startCol = col;
             startRow = row;
@@ -347,7 +346,7 @@ void gerarRastroVerde(bool fromCurrentPosition = false)
         {
             for (const auto &cell : path)
             {
-                // Verifica se cada célula do caminho é válida
+                // Usa apenas células não parede dentro dos limites
                 if (cell.first >= 0 && cell.first < LARGURA_LABIRINTO &&
                     cell.second >= 0 && cell.second < ALTURA_LABIRINTO &&
                     mapaLabirinto[cell.second][cell.first] != 'X')
@@ -357,13 +356,13 @@ void gerarRastroVerde(bool fromCurrentPosition = false)
                 }
                 else
                 {
-                    // Se encontrar uma célula inválida, limpa o caminho
+                    // Abortamos se qualquer célula for inválida
                     rastroVerde.clear();
                     pathCells.clear();
                     return;
                 }
             }
-            pathProgressIndex = 0;
+            pathProgressIndex = 0; // reinicia progresso do rastro
         }
     }
 }
@@ -374,15 +373,15 @@ void atualizarJogo(float deltaTime)
     float oldX = jogador.getCaixaColisao().x;
     float oldY = jogador.getCaixaColisao().y;
 
-    // 1. Atualiza posição do jogador
+    // Atualiza o jogador e obtém nova célula
     jogador.atualizar(deltaTime);
     CaixaColisao novaCaixaJogador = jogador.getCaixaColisao();
 
-    // Verifica se o jogador mudou de célula
+    // Se jogador mudou de célula
     auto currentCell = getJogadorCell();
     if (currentCell != lastCell)
     {
-        // Verifica se a nova posição está no caminho atual
+    // Verifica se a célula está dentro do caminho atual
         bool onPath = false;
         for (const auto &cell : pathCells)
         {
@@ -392,7 +391,7 @@ void atualizarJogo(float deltaTime)
                 break;
             }
         }
-        // Se não estiver no caminho, recalcula
+    // Recalcula se saiu do caminho para manter rastro dinâmico
         if (!onPath)
         {
             gerarRastroVerde(true);
@@ -400,13 +399,13 @@ void atualizarJogo(float deltaTime)
         lastCell = currentCell;
     }
 
-    // Atualiza espinhos (para permitir alternância ativa/inativa)
+    // Atualiza timers dos espinhos (ativa/desativa)
     for (auto &esp : meusEspinhos)
     {
         esp.atualizar(deltaTime);
     }
 
-    // Botão (apenas na fase 2): ao pisar, abre portas definidas
+    // Fase 2: se pisa no botão, abre portas e recalcula rastro/espinhos
     if (faseAtual == 2 && !botaoAtivado && botaoCol >= 0 && botaoRow >= 0)
     {
         auto [pcol, prow] = getJogadorCell();
@@ -415,12 +414,12 @@ void atualizarJogo(float deltaTime)
             botaoAtivado = true;
             std::cout << "Botao pressionado! Abrindo portas..." << std::endl;
 
-            // Clear current state
+            // Limpa vetores atuais
             rastroVerde.clear();
             pathCells.clear();
             meusEspinhos.clear();
 
-            // Open doors
+            // Converte cada porta em chão navegável
             for (const auto &pr : portasParaAbrir)
             {
                 int dc = pr.first;
@@ -431,18 +430,18 @@ void atualizarJogo(float deltaTime)
                 }
             }
 
-            // Reset progress and regenerate path from current position
+            // Regenera caminho partindo da posição atual
             pathProgressIndex = 0;
             gerarRastroVerde(true);
 
-            // Initialize spikes avoiding the button
+            // Recria espinhos evitando célula do botão
             std::vector<std::pair<int, int>> forbidden;
             forbidden.emplace_back(botaoCol, botaoRow);
             inicializarFaseEspinhos(forbidden);
         }
     }
 
-    // 2. Lógica de Colisão com Paredes do Labirinto
+    // Detecta colisão com qualquer parede e reverte movimento
     bool colidiuComParede = false;
     for (int y = 0; y < ALTURA_LABIRINTO; ++y)
     {
@@ -467,15 +466,15 @@ void atualizarJogo(float deltaTime)
 
     if (colidiuComParede)
     {
-        // Reverte o movimento
+    // Reversão de posição mantém jogador fora da parede
         jogador.setX(oldX);
         jogador.setY(oldY);
     }
 
-    // Atualiza progresso do rastro conforme posição do jogador
+    // Atualiza índice de progresso no caminho (para desenhar apenas parte restante)
     {
         auto [col, row] = getJogadorCell();
-        // procura primeiro índice em pathCells que corresponda a (col,row)
+    // Busca célula correspondente no vetor pathCells
         bool foundPosition = false;
         for (size_t i = 0; i < pathCells.size(); ++i)
         {
@@ -489,24 +488,24 @@ void atualizarJogo(float deltaTime)
 
         if (!foundPosition)
         {
-            pathProgressIndex = 0; // Reset progress while off path
+            pathProgressIndex = 0; // fora do caminho: mostra inteiro
         }
     }
 
-    // 3. Colisão com Espinhos
+    // Se colidir com espinho: reinicia posição e reseta progresso
     for (const auto &espinho : meusEspinhos)
     {
         if (espinho.verificarColisao(jogador.getCaixaColisao()))
         {
             std::cout << "Colidiu com espinho!" << std::endl;
             jogador.reiniciarPosicao();
-            // Ao morrer, restaura visual completo do rastro
+            // Reset progresso do rastro após morte
             pathProgressIndex = 0;
             break;
         }
     }
 
-    // 4. Verificação de Chegada ao Fim
+    // Objetivo alcançado: troca de fase ou mostra debug
     CaixaColisao caixaFim = {fimLabX - TAMANHO_CELULA / 2, fimLabY - TAMANHO_CELULA / 2, TAMANHO_CELULA, TAMANHO_CELULA};
     if (Jogador::checkCollision(jogador.getCaixaColisao(), caixaFim))
     {
@@ -517,7 +516,7 @@ void atualizarJogo(float deltaTime)
         }
         else
         {
-            // Debug info to help diagnose visibility issues
+            // Informações de depuração da fase 2
             std::cout << "[DEBUG] Fase2 carregada: inicioCol=" << inicioCol << " inicioRow=" << inicioRow
                       << " fimCol=" << fimCol << " fimRow=" << fimRow << std::endl;
             std::cout << "[DEBUG] Player pos: x=" << jogador.getCaixaColisao().x << " y=" << jogador.getCaixaColisao().y
@@ -531,14 +530,14 @@ void atualizarJogo(float deltaTime)
 
 void desenharJogo()
 {
-    // Configura projeção fixa igual à do menu (0..windowWidth, 0..windowHeight)
+    // Define projeção ortográfica 2D baseada na janela
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluOrtho2D(0, gWindowWidth, 0, gWindowHeight);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // 0. Fundo com gradiente sutil cobrindo toda a janela
+    // Fundo com gradiente vertical sutil
     glBegin(GL_QUADS);
     glColor3f(0.06f, 0.08f, 0.12f);
     glVertex2f(0.0f, 0.0f);
@@ -548,7 +547,7 @@ void desenharJogo()
     glVertex2f(0.0f, (float)gWindowHeight);
     glEnd();
 
-    // Translada labirinto para centro da tela
+    // Centraliza labirinto dentro da janela
     float larguraMundo = LARGURA_LABIRINTO * TAMANHO_CELULA;
     float alturaMundo = ALTURA_LABIRINTO * TAMANHO_CELULA;
     float offsetX = (gWindowWidth - larguraMundo) * 0.5f;
@@ -556,7 +555,7 @@ void desenharJogo()
     glPushMatrix();
     glTranslatef(offsetX, offsetY, 0.0f);
 
-    // 1. Desenha o Labirinto (Paredes e Chão)
+    // Desenha cada célula do labirinto (paredes e chão)
     for (int y = 0; y < ALTURA_LABIRINTO; ++y)
     {
         for (int x = 0; x < LARGURA_LABIRINTO; ++x)
@@ -566,12 +565,11 @@ void desenharJogo()
 
             if (mapaLabirinto[y][x] == 'X')
             {
-                glColor3f(0.45f, 0.42f, 0.5f); // Cor da parede (cinza azulado)
+                glColor3f(0.45f, 0.42f, 0.5f); // parede
             }
             else
             {
-                // piso com leve variação dependendo se é caminho do rastro
-                glColor3f(0.18f, 0.18f, 0.18f); // Cor do chão (cinza escuro)
+                glColor3f(0.18f, 0.18f, 0.18f); // piso
             }
             glBegin(GL_QUADS);
             glVertex2f(drawX, drawY);
@@ -586,10 +584,7 @@ void desenharJogo()
                 float bx = drawX + TAMANHO_CELULA * 0.25f;
                 float by = drawY + TAMANHO_CELULA * 0.25f;
                 float bw = TAMANHO_CELULA * 0.5f;
-                if (botaoAtivado)
-                    glColor3f(0.2f, 0.8f, 0.2f); // verde quando ativado
-                else
-                    glColor3f(0.8f, 0.2f, 0.2f); // vermelho quando não ativado
+                if (botaoAtivado) glColor3f(0.2f, 0.8f, 0.2f); else glColor3f(0.8f, 0.2f, 0.2f);
                 glBegin(GL_QUADS);
                 glVertex2f(bx, by);
                 glVertex2f(bx + bw, by);
@@ -597,7 +592,7 @@ void desenharJogo()
                 glVertex2f(bx, by + bw);
                 glEnd();
             }
-            // linhas de grid sutis
+            // Linhas de grade delicadas para definição visual
             glColor3f(0.06f, 0.06f, 0.08f);
             glBegin(GL_LINE_LOOP);
             glVertex2f(drawX, drawY);
@@ -608,13 +603,12 @@ void desenharJogo()
         }
     }
 
-    // 2. Desenha o Traço Verde (de nó em nó — centros das células)
-    // For phase2: draw the hint path (as if button pressed) always; draw the actual path only if button activated.
+    // Desenha caminho verde (fase 2 possui hint antes de ativar botão)
     if (faseAtual == 2)
     {
         if (!hintPathCells.empty())
         {
-            // draw hint path (lighter/fainter green to indicate it's a hint)
+            // Hint path (tracejado mais claro)
             glColor3f(0.2f, 0.8f, 0.4f);
             glLineWidth(3.0f);
             const float dashLen = 12.0f;
@@ -650,7 +644,7 @@ void desenharJogo()
             }
             glLineWidth(1.0f);
         }
-        // draw actual path only if button pressed
+    // Caminho real quando botão ativado
         if (botaoAtivado && !pathCells.empty())
         {
             glColor3f(0.0f, 0.9f, 0.2f);
@@ -693,10 +687,10 @@ void desenharJogo()
     {
         if (!pathCells.empty())
         {
-            // Encontra índice inicial para desenhar (começa do progresso atual)
+            // Define ponto inicial baseado no progresso do jogador
             int startIndex = pathProgressIndex;
 
-            // Se o jogador está em alguma célula do path, comece dali
+            // Ajusta início se jogador já está sobre alguma célula do caminho
             auto [pcol, prow] = getJogadorCell();
             for (size_t i = 0; i < pathCells.size(); ++i)
             {
@@ -719,7 +713,7 @@ void desenharJogo()
                 {
                     int dxcell = pathCells[i + 1].first - pathCells[i].first;
                     int dycell = pathCells[i + 1].second - pathCells[i].second;
-                    // Só conecta células adjacentes (sem diagonal)
+                    // Desenha segmentos apenas entre células adjacentes ortogonais
                     if (abs(dxcell) + abs(dycell) != 1)
                         continue;
 
@@ -752,24 +746,24 @@ void desenharJogo()
             }
         }
 
-        // 3. Desenha os espinhos
+    // Desenha espinhos por cima do piso
         for (const auto &espinho : meusEspinhos)
         {
             espinho.desenhar();
         }
 
-        // 4. Desenha o jogador (por último, para ficar por cima)
+    // Desenha jogador por último para ficar acima
         jogador.desenhar();
         glPopMatrix();
     } // <-- fim de desenharJogo()
 }
 
-// --- FUNÇÕES DE "CALLBACK" DO GLUT ---
+// Callbacks GLUT (render, atualização, entrada)
 // Forward declarations
 void desenharJogo();
 void atualizarJogo(float deltaTime);
-void callbackPassiveMotion(int x, int y);                // forward decl para registro antes da definição
-void callbackMouse(int button, int state, int x, int y); // forward decl
+void callbackPassiveMotion(int x, int y); // atualiza hover em menus
+void callbackMouse(int button, int state, int x, int y); // processa cliques
 
 // GLUT callback functions
 void callbackDisplay()
@@ -779,7 +773,7 @@ void callbackDisplay()
     glLoadIdentity();
     if (gameState == GameState::MENU_PRINCIPAL)
     {
-        // Configura ortho para UI fixa
+    // Renderiza menu principal
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         gluOrtho2D(0, gWindowWidth, 0, gWindowHeight);
@@ -798,7 +792,7 @@ void callbackDisplay()
     }
     else
     {
-        // JOGANDO (desenharJogo ajusta projeção e modelo)
+    // Estado jogando delega para desenharJogo()
         desenharJogo();
     }
     glutSwapBuffers();
@@ -822,7 +816,7 @@ void callbackKeyboardDown(unsigned char key, int x, int y)
     case 'w':
     case 'W':
         jogador.setMovendoParaCima(true);
-        break;
+    break; // ESC sai
     case 's':
     case 'S':
         jogador.setMovendoParaBaixo(true);
@@ -841,7 +835,7 @@ void callbackKeyboardDown(unsigned char key, int x, int y)
     case 'm':
     case 'M':
         gameState = GameState::MENU_PRINCIPAL;
-        break; // atalho para voltar
+    break;
     }
 }
 
@@ -870,8 +864,7 @@ void callbackKeyboardUp(unsigned char key, int x, int y)
 
 void callbackReshape(int w, int h)
 {
-    if (h == 0)
-        h = 1;
+    if (h == 0) h = 1; // evita divisão por zero
     glViewport(0, 0, w, h);
     gWindowWidth = w;
     gWindowHeight = h;
@@ -923,7 +916,7 @@ int main_proxy(int argc, char **argv)
         gameState = GameState::MENU_PRINCIPAL;
     };
 
-    // Encontra 'S' e 'F' e define posições
+    // Procura células 'S' (spawn) e 'F' (fim) e define posições
     for (int y = 0; y < ALTURA_LABIRINTO; ++y)
     {
         for (int x = 0; x < LARGURA_LABIRINTO; ++x)
@@ -950,7 +943,7 @@ int main_proxy(int argc, char **argv)
         }
     }
 
-    // Re-generate rastro now that we discovered start/end
+    // Se iniciar direto em jogar, gera rastro e espinhos
     if (gameState == GameState::JOGANDO)
     {
         gerarRastroVerde();
@@ -970,7 +963,7 @@ int main_proxy(int argc, char **argv)
     return 0;
 }
 
-// O Hack do WinMain que o Linker do Windows procura
+// WinMain redireciona execução para main_proxy (necessário em Windows)
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow)
 {
@@ -981,7 +974,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 }
 
 // Converte coordenadas de mouse GLUT (origem topo-esquerda?) para nosso ortho (origem em 0,0 inferior esquerda)
-static void atualizarHoverMenus(int x, int y)
+static void atualizarHoverMenus(int x, int y) // converte Y para origem inferior e atualiza estado hover
 {
     // GLUT fornece y a partir do topo da janela; precisamos inverter
     int mouseY = gWindowHeight - y;
@@ -1009,12 +1002,10 @@ void callbackMouse(int button, int state, int x, int y)
     int mouseX = x;
     if (gameState == GameState::MENU_PRINCIPAL)
     {
-        if (g_menuPrincipal.processarClick(mouseX, mouseY))
-            return;
+        if (g_menuPrincipal.processarClick(mouseX, mouseY)) return;
     }
     else if (gameState == GameState::INSTRUCOES)
     {
-        if (g_telaInstrucoes.processarClick(mouseX, mouseY))
-            return;
+        if (g_telaInstrucoes.processarClick(mouseX, mouseY)) return;
     }
 }
