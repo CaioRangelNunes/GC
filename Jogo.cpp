@@ -14,6 +14,7 @@
 #include "Fase2.h"
 #include "Fase3.h"
 #include "Menu.h"
+#include "MenuPause.h"
 #include "PlayerVariant.h"
 
 // ---------------- Jogo (Singleton) ----------------
@@ -26,12 +27,14 @@ enum class GameState
     MENU_PRINCIPAL,
     INSTRUCOES,
     SELECAO_FASE,
-    JOGANDO
+    JOGANDO,
+    PAUSE_MENU
 };
 static GameState g_gameState = GameState::MENU_PRINCIPAL;
 static MenuPrincipal g_menuPrincipal;
 static TelaInstrucoes g_telaInstrucoes;
 static TelaSelecaoFase g_telaSelecaoFase;
+static MenuPause g_menuPause;
 PlayerVariant g_selectedVariant = PlayerVariant::PADRAO;
 static int gScreenWidth = 1024, gScreenHeight = 768; // dimensão janela atual
 
@@ -42,6 +45,7 @@ Jogo::Jogo() : faseAtual(nullptr),
                alturaJanela(768)
 {
     std::fill(std::begin(teclas), std::end(teclas), false);
+    hoverPause = false;
 }
 
 Jogo *Jogo::getInstancia()
@@ -57,17 +61,27 @@ void Jogo::inicializar()
     g_menuPrincipal.inicializar(gScreenWidth, gScreenHeight);
     g_telaInstrucoes.inicializar(gScreenWidth, gScreenHeight);
     g_telaSelecaoFase.inicializar(gScreenWidth, gScreenHeight);
+    g_menuPause.inicializar(gScreenWidth, gScreenHeight);
     // Liga callbacks principais
     // Botões do Menu Principal: 0 Iniciar, 1 Como Jogar, 2 Sair, 3..6 seletores de personagem
     auto &botoesMenu = g_menuPrincipal.getBotoes();
-    if (botoesMenu.size() >= 3)
+    if (botoesMenu.size() >= 4)
     {
+        // Iniciar: escolher fase (reinicia fase ao voltar do menu)
         botoesMenu[0].onClick = []()
-        { g_gameState = GameState::SELECAO_FASE; }; // abrir seleção de fase
+        { g_gameState = GameState::SELECAO_FASE; };
+        // Como Jogar
         botoesMenu[1].onClick = []()
         { g_gameState = GameState::INSTRUCOES; };
+        // Sair
         botoesMenu[2].onClick = []()
         { glutLeaveMainLoop(); };
+        // Continuar: volta para jogo se havia fase carregada
+        botoesMenu[3].onClick = []()
+        {
+            if (Jogo::getInstancia()->faseAtual)
+                g_gameState = GameState::JOGANDO;
+        };
     }
     // Botão voltar instruções
     auto &botoesInstr = g_telaInstrucoes.getBotoes();
@@ -88,6 +102,18 @@ void Jogo::inicializar()
     if (!botoesFase.empty())
         botoesFase.back().onClick = []()
         { g_gameState = GameState::MENU_PRINCIPAL; };
+
+    // Callbacks do menu de pausa
+    auto &botoesPause = g_menuPause.getBotoes();
+    if (botoesPause.size() >= 2)
+    {
+        // Continuar
+        botoesPause[0].onClick = []()
+        { g_gameState = GameState::JOGANDO; };
+        // Menu Principal (reinicia fase)
+        botoesPause[1].onClick = []()
+        { Jogo::getInstancia()->carregarFase(1); g_gameState = GameState::MENU_PRINCIPAL; }; // placeholder: não reinicia automaticamente; poderia resetar faseAtual.reset();
+    }
 }
 
 void Jogo::carregarFase(int numeroFase)
@@ -173,7 +199,7 @@ void Jogo::desenhar()
     glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     // Telas de menu em coordenadas de pixel
-    if (g_gameState == GameState::MENU_PRINCIPAL || g_gameState == GameState::INSTRUCOES || g_gameState == GameState::SELECAO_FASE)
+    if (g_gameState == GameState::MENU_PRINCIPAL || g_gameState == GameState::INSTRUCOES || g_gameState == GameState::SELECAO_FASE || g_gameState == GameState::PAUSE_MENU)
     {
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
@@ -184,8 +210,10 @@ void Jogo::desenhar()
             g_menuPrincipal.desenhar();
         else if (g_gameState == GameState::INSTRUCOES)
             g_telaInstrucoes.desenhar();
-        else
+        else if (g_gameState == GameState::SELECAO_FASE)
             g_telaSelecaoFase.desenhar();
+        else if (g_gameState == GameState::PAUSE_MENU)
+            g_menuPause.desenhar();
         glutSwapBuffers();
         return;
     }
@@ -217,6 +245,38 @@ void Jogo::desenhar()
     glEnd();
     faseAtual->desenhar();
     jogador.desenhar();
+
+    // Botão Pause fora do mapa (HUD negativo) com hover
+    float btnW = 140.0f, btnH = 46.0f;
+    float bx = -180.0f, by = alturaMundo - btnH - 20.0f; // área negativa
+    if (hoverPause)
+        glColor3f(0.22f, 0.22f, 0.30f);
+    else
+        glColor3f(0.15f, 0.15f, 0.22f);
+    glBegin(GL_QUADS);
+    glVertex2f(bx, by);
+    glVertex2f(bx + btnW, by);
+    glVertex2f(bx + btnW, by + btnH);
+    glVertex2f(bx, by + btnH);
+    glEnd();
+    if (hoverPause)
+        glColor3f(0.85f, 0.85f, 0.95f);
+    else
+        glColor3f(0.70f, 0.70f, 0.80f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(bx, by);
+    glVertex2f(bx + btnW, by);
+    glVertex2f(bx + btnW, by + btnH);
+    glVertex2f(bx, by + btnH);
+    glEnd();
+    if (hoverPause)
+        glColor3f(0.98f, 0.98f, 1.0f);
+    else
+        glColor3f(0.92f, 0.92f, 0.96f);
+    glRasterPos2f(bx + 28.0f, by + btnH / 2 - 6.0f);
+    const char *txt = "Pause";
+    for (const char *p = txt; *p; ++p)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *p);
     if (jogoVencido)
     {
         float w = larguraMundo * 0.6f;
@@ -402,6 +462,35 @@ static void cbMouse(int button, int state, int x, int y)
         if (g_telaSelecaoFase.processarClick(convX, convY))
             glutPostRedisplay();
     }
+    else if (g_gameState == GameState::JOGANDO)
+    {
+        // Converte coordenadas de tela (convX,convY) para o espaço ortográfico usado em Jogo::desenhar
+        Fase *fasePtr = Jogo::getInstancia()->getFaseAtual();
+        if (fasePtr)
+        {
+            float larguraMundo = fasePtr->getLargura() * fasePtr->getTamanhoCelula();
+            float alturaMundo = fasePtr->getAltura() * fasePtr->getTamanhoCelula();
+            const float margemHUD = 220.0f; // deve bater com valor em desenhar()
+            // Mapeamento linear: pixel 0 -> -margemHUD, pixel larguraJanela -> larguraMundo + margemHUD
+            float worldX = -margemHUD + (static_cast<float>(convX) / gScreenWidth) * (larguraMundo + 2.0f * margemHUD);
+            float worldY = -margemHUD + (static_cast<float>(convY) / gScreenHeight) * (alturaMundo + 2.0f * margemHUD);
+
+            // Área do botão Pause (desenhado em coordenadas negativas)
+            float btnW = 140.0f, btnH = 46.0f;
+            float bx = -180.0f;
+            float by = alturaMundo - btnH - 20.0f;
+            if (worldX >= bx && worldX <= bx + btnW && worldY >= by && worldY <= by + btnH)
+            {
+                g_gameState = GameState::PAUSE_MENU;
+                glutPostRedisplay();
+            }
+        }
+    }
+    else if (g_gameState == GameState::PAUSE_MENU)
+    {
+        if (g_menuPause.processarClick(convX, convY))
+            glutPostRedisplay();
+    }
 }
 static void cbMotionPassive(int x, int y)
 {
@@ -413,6 +502,27 @@ static void cbMotionPassive(int x, int y)
         g_telaInstrucoes.atualizarHover(convX, convY);
     else if (g_gameState == GameState::SELECAO_FASE)
         g_telaSelecaoFase.atualizarHover(convX, convY);
+    else if (g_gameState == GameState::PAUSE_MENU)
+        g_menuPause.atualizarHover(convX, convY);
+    else if (g_gameState == GameState::JOGANDO)
+    {
+        Fase *fasePtr = Jogo::getInstancia()->getFaseAtual();
+        bool hover = false;
+        if (fasePtr)
+        {
+            float larguraMundo = fasePtr->getLargura() * fasePtr->getTamanhoCelula();
+            float alturaMundo = fasePtr->getAltura() * fasePtr->getTamanhoCelula();
+            const float margemHUD = 220.0f;
+            float worldX = -margemHUD + (static_cast<float>(convX) / gScreenWidth) * (larguraMundo + 2.0f * margemHUD);
+            float worldY = -margemHUD + (static_cast<float>(convY) / gScreenHeight) * (alturaMundo + 2.0f * margemHUD);
+            float btnW = 140.0f, btnH = 46.0f;
+            float bx = -180.0f;
+            float by = alturaMundo - btnH - 20.0f;
+            if (worldX >= bx && worldX <= bx + btnW && worldY >= by && worldY <= by + btnH)
+                hover = true;
+        }
+        Jogo::getInstancia()->setHoverPause(hover);
+    }
 }
 static void cbTimer(int)
 {
