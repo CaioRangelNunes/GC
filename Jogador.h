@@ -22,6 +22,8 @@ public:
     // --- MÉTODOS DE AÇÃO / ESTADO ---
     void sofrerDano(int quantidade);
     void reiniciarPosicao();
+    // Define dinamicamente a posição de spawn (ex.: ao carregar nova fase)
+    void definirSpawn(float sx, float sy) { m_spawnX = sx; m_spawnY = sy; }
 
     // --- GETTERS (Informações para outras partes do jogo) ---
     CaixaColisao getCaixaColisao() const;
