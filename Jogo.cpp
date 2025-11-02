@@ -12,6 +12,7 @@
 #include "Jogo.h"
 #include "Fase1.h"
 #include "Fase2.h"
+#include "Fase3.h"
 
 // ---------------- Jogo (Singleton) ----------------
 
@@ -39,8 +40,10 @@ void Jogo::inicializar() {
 void Jogo::carregarFase(int numeroFase) {
     if (numeroFase == 1) {
         faseAtual = std::make_unique<Fase1>();
-    } else {
+    } else if (numeroFase == 2) {
         faseAtual = std::make_unique<Fase2>();
+    } else {
+        faseAtual = std::make_unique<Fase3>();
     }
     faseAtual->setJogador(&jogador);
     faseAtual->inicializar();
@@ -82,8 +85,9 @@ void Jogo::atualizar(float dt) {
 
     // Vitória e troca de fase
     if (faseAtual->verificarVitoria(jogador)) {
-        // Fase 1 vai para 2; Fase 2 marca vitória
+        // Fase 1 -> 2 -> 3 -> vitória
         if (dynamic_cast<Fase1*>(faseAtual.get()) != nullptr) carregarFase(2);
+        else if (dynamic_cast<Fase2*>(faseAtual.get()) != nullptr) carregarFase(3);
         else jogoVencido = true;
     }
 }
@@ -107,6 +111,42 @@ void Jogo::desenhar() {
 
     faseAtual->desenhar();
     jogador.desenhar();
+    
+        // Overlay de vitória após terminar Fase 3
+        if (jogoVencido) {
+            // caixa semi-transparente central
+            float w = larguraMundo * 0.6f;
+            float h = alturaMundo * 0.3f;
+            float cx = larguraMundo / 2.0f;
+            float cy = alturaMundo / 2.0f;
+            glColor4f(0.0f, 0.0f, 0.0f, 0.55f);
+            glBegin(GL_QUADS);
+                glVertex2f(cx - w/2, cy - h/2);
+                glVertex2f(cx + w/2, cy - h/2);
+                glVertex2f(cx + w/2, cy + h/2);
+                glVertex2f(cx - w/2, cy + h/2);
+            glEnd();
+            // moldura dourada
+            glColor3f(0.98f, 0.82f, 0.30f);
+            glLineWidth(3.0f);
+            glBegin(GL_LINE_LOOP);
+                glVertex2f(cx - w/2, cy - h/2);
+                glVertex2f(cx + w/2, cy - h/2);
+                glVertex2f(cx + w/2, cy + h/2);
+                glVertex2f(cx - w/2, cy + h/2);
+            glEnd();
+            glLineWidth(1.0f);
+            // texto
+            const char* msg = "Voce ganhou!";
+            glColor3f(0.98f, 0.90f, 0.50f);
+            // centraliza aproximadamente: calcula largura do texto
+            int len = 0; for (const char* p = msg; *p; ++p) ++len;
+            float textW = len * 10.0f; // approx para HELVETICA_18
+            float tx = cx - textW/2;
+            float ty = cy - 6.0f;
+            glRasterPos2f(tx, ty);
+            for (const char* p = msg; *p; ++p) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *p);
+        }
 
     glutSwapBuffers();
 }

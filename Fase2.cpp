@@ -152,26 +152,68 @@ void Fase2::desenhar() {
         }
     }
 
-    // Desenha bússola no canto inferior esquerdo (fora do labirinto)
-    // Posição fixa na margem: usa a margem de ~50px do ortho (ver Jogo::redimensionarJanela)
-    const float hudX = -40.0f;
-    const float hudY = -40.0f;
-    const float arrowLen = 28.0f;
-    const float arrowWidth = 10.0f;
-    // Caixa de fundo da bússola
-    glColor3f(0.08f, 0.08f, 0.10f);
-    glBegin(GL_QUADS);
-        glVertex2f(hudX - 24, hudY - 24);
-        glVertex2f(hudX + 24, hudY - 24);
-        glVertex2f(hudX + 24, hudY + 24);
-        glVertex2f(hudX - 24, hudY + 24);
+    // Desenha bússola dourada no canto inferior esquerdo (fora do labirinto)
+    // Posição fixa na margem: usa a margem do ortho (ver Jogo::redimensionarJanela)
+    const float hudX = -40.0f;  // centro da bússola
+    const float hudY = -10.0f;  // um pouco mais pra cima
+    const float radiusOuter = 26.0f;
+    const float radiusInner = 21.0f;
+    const int segments = 48;
+    // Face com leve gradiente (golden)
+    glBegin(GL_TRIANGLE_FAN);
+        glColor3f(0.75f, 0.55f, 0.15f); // centro (ouro mais escuro)
+        glVertex2f(hudX, hudY);
+        glColor3f(0.95f, 0.76f, 0.24f); // borda (ouro mais claro)
+        for (int i = 0; i <= segments; ++i) {
+            float a = (float)i / segments * 2.0f * 3.1415926f;
+            glVertex2f(hudX + std::cos(a) * radiusInner, hudY + std::sin(a) * radiusInner);
+        }
     glEnd();
-    glColor3f(0.18f, 0.18f, 0.22f);
+    // Aro externo (bezel) dourado
+    glColor3f(0.98f, 0.82f, 0.30f);
+    glLineWidth(3.0f);
     glBegin(GL_LINE_LOOP);
-        glVertex2f(hudX - 24, hudY - 24);
-        glVertex2f(hudX + 24, hudY - 24);
-        glVertex2f(hudX + 24, hudY + 24);
-        glVertex2f(hudX - 24, hudY + 24);
+        for (int i = 0; i < segments; ++i) {
+            float a = (float)i / segments * 2.0f * 3.1415926f;
+            glVertex2f(hudX + std::cos(a) * radiusOuter, hudY + std::sin(a) * radiusOuter);
+        }
+    glEnd();
+    glLineWidth(1.0f);
+    // Marcas cardeais (ticks)
+    glColor3f(0.98f, 0.82f, 0.30f);
+    glLineWidth(2.0f);
+    for (int k = 0; k < 4; ++k) {
+        float a = 3.1415926f * 0.5f * k; // 0,90,180,270 graus
+        float x1 = hudX + std::cos(a) * (radiusInner - 2.0f);
+        float y1 = hudY + std::sin(a) * (radiusInner - 2.0f);
+        float x2 = hudX + std::cos(a) * (radiusOuter - 1.0f);
+        float y2 = hudY + std::sin(a) * (radiusOuter - 1.0f);
+        glBegin(GL_LINES);
+            glVertex2f(x1, y1);
+            glVertex2f(x2, y2);
+        glEnd();
+    }
+    glLineWidth(1.0f);
+
+    // Letras dos pontos cardeais (N, E, S, W)
+    auto drawText = [&](float x, float y, const char* txt){
+        glRasterPos2f(x, y);
+        for (const char* p = txt; *p; ++p) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *p);
+    };
+    glColor3f(0.98f, 0.90f, 0.50f);
+    float tOff = 6.0f;
+    drawText(hudX - 3.0f, hudY + radiusOuter + tOff, "N");
+    drawText(hudX + radiusOuter + tOff, hudY - 4.0f, "E");
+    drawText(hudX - 3.5f, hudY - radiusOuter - (tOff + 8.0f), "S");
+    drawText(hudX - radiusOuter - (tOff + 8.0f), hudY - 4.0f, "W");
+
+    // Leve highlight (brilho) no aro
+    glColor4f(1.0f, 1.0f, 1.0f, 0.25f);
+    glBegin(GL_LINE_STRIP);
+        for (int i = -segments/6; i <= segments/6; ++i) {
+            float a = (float)i / segments * 2.0f * 3.1415926f - 2.2f; // arco superior-esquerdo
+            glVertex2f(hudX + std::cos(a) * (radiusOuter - 1.0f), hudY + std::sin(a) * (radiusOuter - 1.0f));
+        }
     glEnd();
 
     // Calcula direção da seta
@@ -202,39 +244,49 @@ void Fase2::desenhar() {
     }
 
     if (temDirecao) {
-        // Desenha seta
+        // Parâmetros da seta
+        const float arrowLen = 18.0f;
+        const float arrowWidth = 10.0f;
         float cx = hudX, cy = hudY;
-        float tipX = cx + std::cos(ang) * arrowLen;
-        float tipY = cy + std::sin(ang) * arrowLen;
-        float leftAng = ang + 2.6f;  // ~149° para abas da ponta
+        float tipX = cx + std::cos(ang) * (arrowLen + 4.0f);
+        float tipY = cy + std::sin(ang) * (arrowLen + 4.0f);
+        float baseX = cx - std::cos(ang) * 6.0f;
+        float baseY = cy - std::sin(ang) * 6.0f;
+        float leftAng = ang + 2.6f;  // abas da ponta
         float rightAng = ang - 2.6f;
         float leftX = tipX + std::cos(leftAng) * arrowWidth;
         float leftY = tipY + std::sin(leftAng) * arrowWidth;
         float rightX = tipX + std::cos(rightAng) * arrowWidth;
         float rightY = tipY + std::sin(rightAng) * arrowWidth;
 
-        // haste
+        // haste com contorno preto
         glColor3f(0.0f, 0.0f, 0.0f);
-        glLineWidth(4.0f);
+        glLineWidth(5.0f);
         glBegin(GL_LINES);
-            glVertex2f(cx, cy);
+            glVertex2f(baseX, baseY);
             glVertex2f(tipX, tipY);
         glEnd();
         glLineWidth(1.0f);
-        glColor3f(0.9f, 0.2f, 0.2f);
-        glLineWidth(2.0f);
+        glColor3f(0.90f, 0.12f, 0.12f); // seta vermelha
+        glLineWidth(3.0f);
         glBegin(GL_LINES);
-            glVertex2f(cx, cy);
+            glVertex2f(baseX, baseY);
             glVertex2f(tipX, tipY);
         glEnd();
         glLineWidth(1.0f);
 
-        // ponta
-        glColor3f(0.9f, 0.2f, 0.2f);
+        // ponta com contorno
+        glColor3f(0.0f, 0.0f, 0.0f);
         glBegin(GL_TRIANGLES);
             glVertex2f(tipX, tipY);
             glVertex2f(leftX, leftY);
             glVertex2f(rightX, rightY);
+        glEnd();
+        glColor3f(0.90f, 0.12f, 0.12f); // ponta vermelha
+        glBegin(GL_TRIANGLES);
+            glVertex2f(tipX - std::cos(ang) * 1.5f, tipY - std::sin(ang) * 1.5f);
+            glVertex2f(leftX + std::cos(ang) * 1.5f, leftY + std::sin(ang) * 1.5f);
+            glVertex2f(rightX + std::cos(ang) * 1.5f, rightY + std::sin(ang) * 1.5f);
         glEnd();
     }
 }
