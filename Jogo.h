@@ -41,6 +41,9 @@ public:
     bool getJogoVencido() const { return jogoVencido; }
     void setHoverPause(bool v) { hoverPause = v; }
     bool isHoverPause() const { return hoverPause; }
+
+    // Reinicia estado para voltar ao menu principal (limpa fase e bandeiras)
+    void resetParaMenu();
 };
 
 #endif // JOGO_H

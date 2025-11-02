@@ -188,12 +188,12 @@ void Fase1::desenhar()
             float y = (alturaLabirinto - 1 - i) * tamanhoCelula;
 
             // Paredes e chão
-            if (mapaLabirinto[i][j] == 'X')
-            {
+            if (mapaLabirinto[i][j] == 'X') {
                 glColor3f(0.45f, 0.45f, 0.45f); // parede
-            }
-            else
-            {
+            } else if (j == fimCol && i == fimRow) {
+                // Destino destacado em vermelho vívido
+                glColor3f(0.75f, 0.08f, 0.08f);
+            } else {
                 glColor3f(0.20f, 0.20f, 0.20f); // chão
             }
             glBegin(GL_QUADS);
@@ -204,7 +204,11 @@ void Fase1::desenhar()
             glEnd();
 
             // Contorno da célula: quadriculado clássico
-            glColor3f(0.06f, 0.06f, 0.08f);
+            if (j == fimCol && i == fimRow) {
+                glColor3f(0.90f, 0.15f, 0.15f); // contorno mais claro para destino
+            } else {
+                glColor3f(0.06f, 0.06f, 0.08f);
+            }
             glBegin(GL_LINE_LOOP);
             glVertex2f(x, y);
             glVertex2f(x + tamanhoCelula, y);
@@ -274,6 +278,19 @@ void Fase1::desenhar()
     {
         espinho.desenhar();
     }
+
+    // Marca objetivo (F) adicional com um "X" pequeno central se quiser reforço visual
+    float fx = fimCol * tamanhoCelula;
+    float fy = (alturaLabirinto - 1 - fimRow) * tamanhoCelula;
+    glColor3f(0.95f, 0.25f, 0.25f);
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+        glVertex2f(fx + tamanhoCelula*0.25f, fy + tamanhoCelula*0.25f);
+        glVertex2f(fx + tamanhoCelula*0.75f, fy + tamanhoCelula*0.75f);
+        glVertex2f(fx + tamanhoCelula*0.75f, fy + tamanhoCelula*0.25f);
+        glVertex2f(fx + tamanhoCelula*0.25f, fy + tamanhoCelula*0.75f);
+    glEnd();
+    glLineWidth(1.0f);
 }
 
 bool Fase1::verificarVitoria(const Jogador &jogador)

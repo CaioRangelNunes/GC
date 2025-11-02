@@ -137,17 +137,20 @@ void Fase2::desenhar()
         {
             float x = j * tamanhoCelula;
             float y = (alturaLabirinto - 1 - i) * tamanhoCelula;
-            if (mapaLabirinto[i][j] == 'X')
+            if (mapaLabirinto[i][j] == 'X') {
                 glColor3f(0.45f, 0.45f, 0.45f);
-            else
+            } else if (j == fimCol && i == fimRow) {
+                glColor3f(0.75f, 0.08f, 0.08f);
+            } else {
                 glColor3f(0.20f, 0.20f, 0.20f);
+            }
             glBegin(GL_QUADS);
             glVertex2f(x, y);
             glVertex2f(x + tamanhoCelula, y);
             glVertex2f(x + tamanhoCelula, y + tamanhoCelula);
             glVertex2f(x, y + tamanhoCelula);
             glEnd();
-            glColor3f(0.06f, 0.06f, 0.08f);
+            if (j == fimCol && i == fimRow) glColor3f(0.90f, 0.15f, 0.15f); else glColor3f(0.06f,0.06f,0.08f);
             glBegin(GL_LINE_LOOP);
             glVertex2f(x, y);
             glVertex2f(x + tamanhoCelula, y);
@@ -160,6 +163,19 @@ void Fase2::desenhar()
     // Desenha espinhos
     for (const auto &e : espinhos)
         e.desenhar();
+
+    // X vermelho adicional na célula final (reforço visual dentro do blackout)
+    float fx = fimCol * tamanhoCelula;
+    float fy = (alturaLabirinto - 1 - fimRow) * tamanhoCelula;
+    glColor3f(0.95f, 0.25f, 0.25f);
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+        glVertex2f(fx + tamanhoCelula*0.25f, fy + tamanhoCelula*0.25f);
+        glVertex2f(fx + tamanhoCelula*0.75f, fy + tamanhoCelula*0.75f);
+        glVertex2f(fx + tamanhoCelula*0.75f, fy + tamanhoCelula*0.25f);
+        glVertex2f(fx + tamanhoCelula*0.25f, fy + tamanhoCelula*0.75f);
+    glEnd();
+    glLineWidth(1.0f);
 
     // Blackout fora do raio de visão (3 células ao redor do jogador)
     if (pcol > -50 && prow > -50)

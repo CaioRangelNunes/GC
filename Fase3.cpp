@@ -109,16 +109,27 @@ void Fase3::desenhar()
             float x = j * tamanhoCelula;
             float y = (alturaLabirinto - 1 - i) * tamanhoCelula;
             if (mapaLabirinto[i][j] == 'X')
+            {
                 glColor3f(0.45f, 0.45f, 0.45f);
+            }
+            else if (j == fimCol && i == fimRow)
+            {
+                glColor3f(0.75f, 0.08f, 0.08f);
+            }
             else
+            {
                 glColor3f(0.20f, 0.20f, 0.20f);
+            }
             glBegin(GL_QUADS);
             glVertex2f(x, y);
             glVertex2f(x + tamanhoCelula, y);
             glVertex2f(x + tamanhoCelula, y + tamanhoCelula);
             glVertex2f(x, y + tamanhoCelula);
             glEnd();
-            glColor3f(0.06f, 0.06f, 0.08f);
+            if (j == fimCol && i == fimRow)
+                glColor3f(0.90f, 0.15f, 0.15f);
+            else
+                glColor3f(0.06f, 0.06f, 0.08f);
             glBegin(GL_LINE_LOOP);
             glVertex2f(x, y);
             glVertex2f(x + tamanhoCelula, y);
@@ -131,6 +142,19 @@ void Fase3::desenhar()
     // Espinhos
     for (const auto &e : espinhos)
         e.desenhar();
+
+    // X vermelho adicional na célula final
+    float fx = fimCol * tamanhoCelula;
+    float fy = (alturaLabirinto - 1 - fimRow) * tamanhoCelula;
+    glColor3f(0.95f, 0.25f, 0.25f);
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+    glVertex2f(fx + tamanhoCelula * 0.25f, fy + tamanhoCelula * 0.25f);
+    glVertex2f(fx + tamanhoCelula * 0.75f, fy + tamanhoCelula * 0.75f);
+    glVertex2f(fx + tamanhoCelula * 0.75f, fy + tamanhoCelula * 0.25f);
+    glVertex2f(fx + tamanhoCelula * 0.25f, fy + tamanhoCelula * 0.75f);
+    glEnd();
+    glLineWidth(1.0f);
 
     // Blackout fora do raio (3 células) igual à Fase 2 (tudo preto fora do FOV)
     if (pcol > -50 && prow > -50)
@@ -211,16 +235,27 @@ void Fase3::desenhar()
             float mx = innerL + j * cellSize;
             float my = innerB + (alturaLabirinto - 1 - i) * cellSize;
             if (mapaLabirinto[i][j] == 'X')
+            {
                 glColor3f(0.35f, 0.35f, 0.35f);
+            }
+            else if (j == fimCol && i == fimRow)
+            {
+                glColor3f(0.80f, 0.10f, 0.10f);
+            }
             else
+            {
                 glColor3f(0.20f, 0.20f, 0.20f);
+            }
             glBegin(GL_QUADS);
             glVertex2f(mx, my);
             glVertex2f(mx + cellSize, my);
             glVertex2f(mx + cellSize, my + cellSize);
             glVertex2f(mx, my + cellSize);
             glEnd();
-            glColor3f(0.06f, 0.06f, 0.08f);
+            if (j == fimCol && i == fimRow)
+                glColor3f(0.90f, 0.15f, 0.15f);
+            else
+                glColor3f(0.06f, 0.06f, 0.08f);
             glBegin(GL_LINE_LOOP);
             glVertex2f(mx, my);
             glVertex2f(mx + cellSize, my);
@@ -243,16 +278,16 @@ void Fase3::desenhar()
     }
     glEnd();
 
-    // Marca objetivo (F) com X vermelho
-    float fx = innerL + fimCol * cellSize;
-    float fy = innerB + (alturaLabirinto - 1 - fimRow) * cellSize;
+    // Marca objetivo (F) com X vermelho no mini-mapa (usar nomes diferentes para evitar conflito com fx/fy do labirinto principal)
+    float fxMap = innerL + fimCol * cellSize;
+    float fyMap = innerB + (alturaLabirinto - 1 - fimRow) * cellSize;
     glColor3f(0.9f, 0.1f, 0.1f);
     glLineWidth(2.0f);
     glBegin(GL_LINES);
-    glVertex2f(fx + 0.3f * cellSize, fy + 0.2f * cellSize);
-    glVertex2f(fx + 0.7f * cellSize, fy + 0.8f * cellSize);
-    glVertex2f(fx + 0.7f * cellSize, fy + 0.2f * cellSize);
-    glVertex2f(fx + 0.3f * cellSize, fy + 0.8f * cellSize);
+    glVertex2f(fxMap + 0.3f * cellSize, fyMap + 0.2f * cellSize);
+    glVertex2f(fxMap + 0.7f * cellSize, fyMap + 0.8f * cellSize);
+    glVertex2f(fxMap + 0.7f * cellSize, fyMap + 0.2f * cellSize);
+    glVertex2f(fxMap + 0.3f * cellSize, fyMap + 0.8f * cellSize);
     glEnd();
     glLineWidth(1.0f);
 }

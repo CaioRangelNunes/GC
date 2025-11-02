@@ -55,6 +55,17 @@ Jogo *Jogo::getInstancia()
     return instancia;
 }
 
+void Jogo::resetParaMenu()
+{
+    // Libera fase atual e limpa estado de vitória / hover
+    faseAtual.reset();
+    jogoVencido = false;
+    hoverPause = false;
+    // Opcional: centraliza jogador em origem neutra para evitar lixo visual
+    jogador.setX(0.0f);
+    jogador.setY(0.0f);
+}
+
 void Jogo::inicializar()
 {
     // Inicializa telas de menu
@@ -110,9 +121,12 @@ void Jogo::inicializar()
         // Continuar
         botoesPause[0].onClick = []()
         { g_gameState = GameState::JOGANDO; };
-        // Menu Principal (reinicia fase)
+        // Menu Principal: limpar fase e voltar ao menu
         botoesPause[1].onClick = []()
-        { Jogo::getInstancia()->carregarFase(1); g_gameState = GameState::MENU_PRINCIPAL; }; // placeholder: não reinicia automaticamente; poderia resetar faseAtual.reset();
+        {
+            Jogo::getInstancia()->resetParaMenu();
+            g_gameState = GameState::MENU_PRINCIPAL;
+        };
     }
 }
 
@@ -300,16 +314,21 @@ void Jogo::desenhar()
         glEnd();
         glLineWidth(1);
         const char *msg = "Voce ganhou!";
-        int len = 0;
-        for (const char *p = msg; *p; ++p)
-            ++len;
+        int len = 0; for (const char *p = msg; *p; ++p) ++len;
         float textW = len * 10.0f;
         float tx = cx - textW / 2;
-        float ty = cy - 6.0f;
+        float ty = cy + h * 0.15f;
         glColor3f(0.98f, 0.90f, 0.50f);
         glRasterPos2f(tx, ty);
-        for (const char *p = msg; *p; ++p)
-            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *p);
+        for (const char *p = msg; *p; ++p) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *p);
+        const char *msg2 = "Clique M para voltar ao menu";
+        int len2 = 0; for(const char* p=msg2;*p;++p) ++len2;
+        float textW2 = len2 * 9.0f;
+        float tx2 = cx - textW2 / 2;
+        float ty2 = cy - h * 0.10f;
+        glColor3f(0.92f,0.92f,0.96f);
+        glRasterPos2f(tx2, ty2);
+        for(const char* p=msg2;*p;++p) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *p);
     }
     glutSwapBuffers();
 }
@@ -369,6 +388,13 @@ void Jogo::teclaPressionada(unsigned char key, int, int)
     case 'd':
     case 'D':
         jogador.setMovendoParaDireita(true);
+        break;
+    case 'm':
+    case 'M':
+        if (jogoVencido) {
+            resetParaMenu();
+            g_gameState = GameState::MENU_PRINCIPAL;
+        }
         break;
     case 27:
         glutLeaveMainLoop();
@@ -483,6 +509,20 @@ static void cbMouse(int button, int state, int x, int y)
             {
                 g_gameState = GameState::PAUSE_MENU;
                 glutPostRedisplay();
+            }
+            // Clique na mensagem de vitória
+            if (Jogo::getInstancia()->getJogoVencido()) {
+                const char* msg2 = "Clique M para voltar ao menu";
+                int len2=0; for(const char* p=msg2;*p;++p) ++len2;
+                float textW2 = len2 * 9.0f;
+                float cx = larguraMundo / 2.0f; float cy = alturaMundo / 2.0f; float h = alturaMundo * 0.3f;
+                float tx2 = cx - textW2 / 2; float ty2 = cy - h * 0.10f;
+                float vBoxX1 = tx2 - 12.0f; float vBoxY1 = ty2 - 12.0f; float vBoxX2 = tx2 + textW2 + 12.0f; float vBoxY2 = ty2 + 28.0f;
+                if (worldX >= vBoxX1 && worldX <= vBoxX2 && worldY >= vBoxY1 && worldY <= vBoxY2) {
+                    Jogo::getInstancia()->resetParaMenu();
+                    g_gameState = GameState::MENU_PRINCIPAL;
+                    glutPostRedisplay();
+                }
             }
         }
     }
